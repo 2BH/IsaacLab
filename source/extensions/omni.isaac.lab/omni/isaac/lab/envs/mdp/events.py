@@ -121,6 +121,57 @@ def randomize_rigid_body_material(
     # apply to simulation
     asset.root_physx_view.set_material_properties(materials, env_ids)
 
+def randomize_body_coms(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    max_displacement_x: tuple[float, float],
+    max_displacement_y: tuple[float, float],
+    max_displacement_z: tuple[float, float],
+    asset_cfg: SceneEntityCfg,
+    distribution: Literal["uniform", "log_uniform", "gaussian"] = "uniform",
+    operation: Literal["add", "scale", "abs"] = "add",
+):
+    """Randomize the CoM of the bodies by adding a random value sampled from the given range.
+
+    .. tip::
+        This function uses CPU tensors to assign the CoM. It is recommended to use this function
+        only during the initialization of the environment.
+    """
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    # resolve environment ids
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device="cpu")
+    else:
+        env_ids = env_ids.cpu()
+
+    # resolve body indices
+    if asset_cfg.body_ids == slice(None):
+        body_ids = torch.arange(asset.num_bodies, dtype=torch.int, device="cpu")
+    else:
+        body_ids = torch.tensor(asset_cfg.body_ids, dtype=torch.int, device="cpu")
+
+    # get the current com of the bodies (num_assets, num_bodies)
+    coms = asset.root_physx_view.get_coms().clone()[:, body_ids, :3]
+
+    # Randomize the com in range -max displacement to max displacement
+    coms[:, :, 0] = _randomize_prop_by_op(
+        coms[:, :, 0], max_displacement_x, env_ids, body_ids, operation=operation, distribution=distribution
+    )
+    coms[:, :, 1] = _randomize_prop_by_op(
+        coms[:, :, 1], max_displacement_y, env_ids, body_ids, operation=operation, distribution=distribution
+    )
+    coms[:, :, 2] = _randomize_prop_by_op(
+        coms[:, :, 2], max_displacement_z, env_ids, body_ids, operation=operation, distribution=distribution
+    )
+       
+    # coms += torch.rand_like(coms) * 2 * max_displacement_x - max_displacement_x
+
+    # Set the new coms
+    new_coms = asset.root_physx_view.get_coms().clone()
+    new_coms[:, asset_cfg.body_ids, 0:3] = coms
+    asset.root_physx_view.set_coms(new_coms, env_ids)
 
 def add_body_mass(
     env: ManagerBasedEnv,
