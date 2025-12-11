@@ -81,13 +81,13 @@ XARM7_TILBURG_CFG = ArticulationCfg(
                 "xarm_joint_(1|2)": 1500.0,     # From gainprm="1500"
                 "xarm_joint_(3|4|5)": 1000.0,   # From gainprm="1000"
                 "xarm_joint_(6|7)": 800.0,      # From gainprm="800"
-                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 3.0, # From kp="100"
+                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 60, # From kp="100"
             },
             damping={
                 "xarm_joint_(1|2)": 150.0,      # Derived from biasprm="... -150"
                 "xarm_joint_(3|4|5)": 100.0,    # Derived from biasprm="... -100"
                 "xarm_joint_(6|7)": 80.0,       # Derived from biasprm="... -80"
-                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 0.1,   # From joint damping="0.1"
+                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 2,   # From joint damping="0.1"
             },
             friction={
                 "xarm_joint_(1|2|3|4|5|6|7)": 1.0,  # From frictionloss="1"

@@ -210,13 +210,24 @@ class EventCfg:
         },
     )
 
-    joint_stiffness_and_damping = EventTerm(
+    arm_joint_stiffness_and_damping = EventTerm(
         func=mdp.randomize_actuator_gains,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-            "stiffness_distribution_params": [0.5, 2.0],
-            "damping_distribution_params": [0.5, 2.0],
+            "asset_cfg": SceneEntityCfg("robot", joint_names="xarm_joint_.*"),
+            "stiffness_distribution_params": [0.7, 1.05],
+            "damping_distribution_params": [0.7, 1.05],
+            "operation": "scale",
+        },
+    )
+
+    hand_joint_stiffness_and_damping = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names="(thumb|index|middle|ring)_joint_.*"),
+            "stiffness_distribution_params": [0.9, 1.1],
+            "damping_distribution_params": [0.9, 1.1],
             "operation": "scale",
         },
     )
