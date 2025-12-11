@@ -53,18 +53,32 @@ def contacts(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:
     index_contact_sensor: ContactSensor = env.scene.sensors["index_digit360_tip_object_s"]
     middle_contact_sensor: ContactSensor = env.scene.sensors["middle_digit360_tip_object_s"]
     ring_contact_sensor: ContactSensor = env.scene.sensors["ring_digit360_tip_object_s"]
+    index_base_contact_sensor: ContactSensor = env.scene.sensors["index_digit360_base_object_s"]
+    middle_base_contact_sensor: ContactSensor = env.scene.sensors["middle_digit360_base_object_s"]
+    ring_base_contact_sensor: ContactSensor = env.scene.sensors["ring_digit360_base_object_s"]
+    thumb_base_contact_sensor: ContactSensor = env.scene.sensors["thumb_digit360_base_object_s"]
     # check if contact force is above threshold
     thumb_contact = thumb_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
     index_contact = index_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
     middle_contact = middle_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
     ring_contact = ring_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
+    index_base_contact = index_base_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
+    middle_base_contact = middle_base_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
+    ring_base_contact = ring_base_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
+    thumb_base_contact = thumb_base_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
 
     thumb_contact_mag = torch.norm(thumb_contact, dim=-1)
     index_contact_mag = torch.norm(index_contact, dim=-1)
     middle_contact_mag = torch.norm(middle_contact, dim=-1)
     ring_contact_mag = torch.norm(ring_contact, dim=-1)
+    index_base_contact_mag = torch.norm(index_base_contact, dim=-1)
+    middle_base_contact_mag = torch.norm(middle_base_contact, dim=-1)
+    ring_base_contact_mag = torch.norm(ring_base_contact, dim=-1)
+    thumb_base_contact_mag = torch.norm(thumb_base_contact, dim=-1)
     good_contact_cond1 = (thumb_contact_mag > threshold) & (
-        (index_contact_mag > threshold) | (middle_contact_mag > threshold) | (ring_contact_mag > threshold)
+        (index_contact_mag > threshold) | (middle_contact_mag > threshold) | (ring_contact_mag > threshold) |
+        (index_base_contact_mag > threshold) | (middle_base_contact_mag > threshold) | 
+        (ring_base_contact_mag > threshold) | (thumb_base_contact_mag > threshold)
     )
 
     return good_contact_cond1

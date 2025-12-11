@@ -277,13 +277,41 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
-
-    reset_robot_joints = EventTerm(
+    # reset_robot_joints = EventTerm(
+    #     func=mdp.reset_joints_by_offset,
+    #     mode="reset",
+    #     params={
+    #         "position_range": [0.2, 0.2], # Set to small range to avoid collisions at start
+    #         "velocity_range": [0.0, 0.0],
+    #     },
+    # )
+    reset_robot_arm_joints = EventTerm(
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": [-0.50, 0.50],
+            "position_range": [0.2, 0.2], # Set to small range to avoid collisions at start
             "velocity_range": [0.0, 0.0],
+            "asset_cfg": SceneEntityCfg("robot", joint_names="xarm_joint_.*"),
+        },
+    )
+
+    reset_robot_hand_base_joints = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": [0.05, 0.05], # Set to small range to avoid collisions at start
+            "velocity_range": [0.0, 0.0],
+            "asset_cfg": SceneEntityCfg("robot", joint_names="(thumb|index|middle|ring)_joint_0"),
+        },
+    )
+
+    reset_robot_hand_tips_joints = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": [0.2, 0.2], # Set to small range to avoid collisions at start
+            "velocity_range": [0.0, 0.0],
+            "asset_cfg": SceneEntityCfg("robot", joint_names="(thumb|index|middle|ring)_joint_(1|2|3)"),
         },
     )
 
@@ -421,7 +449,11 @@ class DexgraspReorientEnvCfg(ManagerBasedEnvCfg):
         self.sim.render_interval = self.decimation
         self.sim.physx.bounce_threshold_velocity = 0.2
         self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.gpu_max_rigid_patch_count = 4 * 5 * 2**15
+        self.sim.physx.gpu_max_rigid_patch_count = 2**24
+        self.sim.physx.gpu_max_rigid_contact_count = 2**24
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**24
+        self.sim.physx.gpu_found_lost_pairs_capacity = 2**24
+        self.sim.physx.gpu_found_lost_pairs_capacity = 2**24
 
         if self.curriculum is not None:
             self.curriculum.adr.params["pos_tol"] = self.rewards.success.params["pos_std"] / 2

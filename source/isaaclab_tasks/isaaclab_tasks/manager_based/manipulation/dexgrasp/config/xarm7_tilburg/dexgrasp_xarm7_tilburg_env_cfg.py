@@ -52,16 +52,21 @@ class XArm7TilburgMixinCfg:
             "index_digit360_tip", 
             "middle_digit360_tip", 
             "ring_digit360_tip", 
-            "thumb_digit360_tip"
+            "thumb_digit360_tip",
+        ]
+        finger_tip_body_base_list = [
+            "index_digit360_base", 
+            "middle_digit360_base", 
+            "ring_digit360_base", 
+            "thumb_digit360_base"
         ]
         
         # 4. Create Contact Sensors for each tip
-        for link_name in finger_tip_body_list:
+        for link_name in finger_tip_body_list+finger_tip_body_base_list:
             setattr(
                 self.scene,
                 f"{link_name}_object_s",
                 ContactSensorCfg(
-                    # Use regex '.*' to find the link regardless of deep nesting (link1/link2/etc)
                     prim_path=f"{{ENV_REGEX_NS}}/Robot/base/.*{link_name}",
                     filter_prim_paths_expr=["{ENV_REGEX_NS}/Object"],
                 ),

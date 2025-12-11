@@ -45,10 +45,12 @@ XARM7_TILBURG_CFG = ArticulationCfg(
         joint_drive_props=sim_utils.JointDrivePropertiesCfg(drive_type="force"),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(-0.15, 0.0, 0.259), 
+        # pos=(-0.10, 0.0, 0.264), 
+        pos=(-0.10, 0.0, 0.267), 
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
-            "xarm_joint_(1|2|3|5|6|7)": 0.0,
+            "xarm_joint_(1|3|5|6|7)": 0.0,
+            "xarm_joint_2": -0.5,
             "xarm_joint_4": 1.2,
             "(index|middle|ring)_joint_0": 0.0,
             "(index|middle|ring)_joint_1": 0.3,
@@ -70,10 +72,10 @@ XARM7_TILBURG_CFG = ArticulationCfg(
                 "thumb_joint_(0|1|2|3)",
             ],
             effort_limit_sim={
-                "xarm_joint_(1|2)": 50.0,       # From class="size1"
-                "xarm_joint_(3|4|5)": 30.0,     # From class="size2"
-                "xarm_joint_(6|7)": 20.0,       # From class="size3"
-                "(index|middle|ring)_joint_(0|1|2|3)": 3.0,  # From forcerange="-3 3"
+                "xarm_joint_(1|2)": 50.0,
+                "xarm_joint_(3|4|5)": 30.0,
+                "xarm_joint_(6|7)": 20.0,
+                "(index|middle|ring)_joint_(0|1|2|3)": 3.0,
                 "thumb_joint_(0|1|2|3)": 3.0,
             },
             stiffness={
