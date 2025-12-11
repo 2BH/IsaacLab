@@ -61,7 +61,7 @@ class SceneCfg(InteractiveSceneCfg):
             collision_props=sim_utils.CollisionPropertiesCfg(),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.55, 0.1, 0.35)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.55, 0.1, 0.405)),
     )
 
     # table
@@ -261,9 +261,10 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": [-0.2, 0.2],
+                # "x": [-0.4, -0.2],
+                "x": [-0.3, 0.3],
                 "y": [-0.2, 0.2],
-                "z": [0.0, 0.4],
+                "z": [0.05, 0.2],
                 "roll": [-3.14, 3.14],
                 "pitch": [-3.14, 3.14],
                 "yaw": [-3.14, 3.14],
@@ -287,20 +288,28 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": [-0.50, 0.50],
+            "position_range": [0.0, 0.0],
             "velocity_range": [0.0, 0.0],
         },
     )
+    # reset_robot_joints = EventTerm(
+    #     func=mdp.reset_joints_by_offset,
+    #     mode="reset",
+    #     params={
+    #         "position_range": [-0.50, 0.50],
+    #         "velocity_range": [0.0, 0.0],
+    #     },
+    # )
 
-    reset_robot_wrist_joint = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names="iiwa7_joint_7"),
-            "position_range": [-3, 3],
-            "velocity_range": [0.0, 0.0],
-        },
-    )
+    # reset_robot_wrist_joint = EventTerm(
+    #     func=mdp.reset_joints_by_offset,
+    #     mode="reset",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names="iiwa7_joint_7"),
+    #         "position_range": [-3, 3],
+    #         "velocity_range": [0.0, 0.0],
+    #     },
+    # )
 
     # Note (Octi): This is a deliberate trick in Remake to accelerate learning.
     # By scheduling gravity as a curriculum — starting with no gravity (easy)
