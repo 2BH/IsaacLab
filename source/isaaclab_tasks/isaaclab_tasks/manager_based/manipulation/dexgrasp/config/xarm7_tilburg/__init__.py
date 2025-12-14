@@ -28,7 +28,7 @@ gym.register(
 )
 
 gym.register(
-    id="Isaac-dexgrasp-Kuka-Allegro-Reorient-Play-v0",
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Reorient-Play-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={

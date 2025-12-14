@@ -41,7 +41,7 @@ class XArm7TilburgMixinCfg:
         super().__post_init__()
         
         # 1. Set the correct Robot Config
-        self.scene.robot = XARM7_TILBURG_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = XARM7_TILBURG_CFG.replace(prim_path="{ENV_REGEX_NS}/robot")
 
         # 2. Update Object Pose tracking to the Hand Base
         # "hand_base" is the root body of the hand in your XML
@@ -49,26 +49,32 @@ class XArm7TilburgMixinCfg:
 
         # 3. Define the Tip Bodies (Rigid Bodies from your XML)
         finger_tip_body_list = [
-            "index_digit360_tip", 
-            "middle_digit360_tip", 
-            "ring_digit360_tip", 
-            "thumb_digit360_tip",
+            "index_distal", 
+            "middle_distal", 
+            "ring_distal", 
+            "thumb_distal",
         ]
-        finger_tip_body_base_list = [
-            "index_digit360_base", 
-            "middle_digit360_base", 
-            "ring_digit360_base", 
-            "thumb_digit360_base"
-        ]
+        # finger_tip_body_list = [
+        #     "index_digit360_tip", 
+        #     "middle_digit360_tip", 
+        #     "ring_digit360_tip", 
+        #     "thumb_digit360_tip",
+        # ]
+        # finger_tip_body_base_list = [
+        #     "index_digit360_base", 
+        #     "middle_digit360_base", 
+        #     "ring_digit360_base", 
+        #     "thumb_digit360_base"
+        # ]
         
         # 4. Create Contact Sensors for each tip
-        for link_name in finger_tip_body_list+finger_tip_body_base_list:
+        for link_name in finger_tip_body_list:
             setattr(
                 self.scene,
                 f"{link_name}_object_s",
                 ContactSensorCfg(
-                    prim_path=f"{{ENV_REGEX_NS}}/Robot/base/.*{link_name}",
-                    filter_prim_paths_expr=["{ENV_REGEX_NS}/Object"],
+                    prim_path="{ENV_REGEX_NS}/robot/base/" + link_name,
+                    filter_prim_paths_expr=["{ENV_REGEX_NS}/object"],
                 ),
             )
 
@@ -81,10 +87,10 @@ class XArm7TilburgMixinCfg:
 
         # 6. Update Hand State Observation (Proprioception)
         # Tracks the base and the tips. 
-        self.observations.proprio.hand_tips_state_b.params["body_asset_cfg"].body_names = ["hand_base", ".*_digit360_tip"]
+        self.observations.proprio.hand_tips_state_b.params["body_asset_cfg"].body_names = ["hand_base", ".*_distal"]
 
         # 7. Update Reward Assets
-        self.rewards.fingers_to_object.params["asset_cfg"] = SceneEntityCfg("robot", body_names=["hand_base", ".*_digit360_tip"])
+        self.rewards.fingers_to_object.params["asset_cfg"] = SceneEntityCfg("robot", body_names=["hand_base", ".*_distal"])
 
 @configclass
 class DexgraspXArm7TilburgReorientEnvCfg(XArm7TilburgMixinCfg, grasp.DexgraspReorientEnvCfg):

@@ -28,7 +28,7 @@ class SceneCfg(InteractiveSceneCfg):
 
     # object
     object: RigidObjectCfg = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/Object",
+        prim_path="{ENV_REGEX_NS}/object",
         spawn=sim_utils.MultiAssetSpawnerCfg(
             assets_cfg=[
                 CuboidCfg(size=(0.05, 0.1, 0.1), physics_material=RigidBodyMaterialCfg(static_friction=0.5)),
@@ -56,7 +56,7 @@ class SceneCfg(InteractiveSceneCfg):
             collision_props=sim_utils.CollisionPropertiesCfg(),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.55, 0.1, 0.406)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.55, 0.1, 0.4)),
     )
 
     # table
@@ -215,8 +215,8 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names="xarm_joint_.*"),
-            "stiffness_distribution_params": [0.7, 1.05],
-            "damping_distribution_params": [0.7, 1.05],
+            "stiffness_distribution_params": [0.8, 1.2],
+            "damping_distribution_params": [0.8, 1.2],
             "operation": "scale",
         },
     )
@@ -267,9 +267,9 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": [-0.1, -0.4],
+                "x": [0.1, -0.4],
                 "y": [-0.2, 0.2],
-                "z": [0.0, 0.3],
+                "z": [0.05, 0.2],
                 "roll": [-3.14, 3.14],
                 "pitch": [-3.14, 3.14],
                 "yaw": [-3.14, 3.14],
@@ -278,27 +278,6 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("object"),
         },
     )
-
-    # reset_object = EventTerm(
-    #     func=mdp.reset_root_state_uniform,
-    #     mode="reset",
-    #     params={
-    #         "pose_range": {
-    #             "x": [-0.4, -0.4],
-    #             "y": [0.0, 0.0],
-    #             "z": [0.2, 0.2],
-
-    #             "roll": [0.0, 0.0],
-    #             "pitch": [0.0, 0.0],
-    #             "yaw": [0.0, 0.0],
-    #             # "roll": [-3.14, 3.14],
-    #             # "pitch": [-3.14, 3.14],
-    #             # "yaw": [-3.14, 3.14],
-    #         },
-    #         "velocity_range": {"x": [-0.0, 0.0], "y": [-0.0, 0.0], "z": [-0.0, 0.0]},
-    #         "asset_cfg": SceneEntityCfg("object"),
-    #     },
-    # )
 
     reset_root = EventTerm(
         func=mdp.reset_root_state_uniform,
@@ -341,7 +320,7 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": [-0.2, 0.2],
+            "position_range": [-0.5, 0.5],
             "velocity_range": [0.0, 0.0],
             "asset_cfg": SceneEntityCfg("robot", joint_names="(thumb|index|middle|ring)_joint_(1|2|3)"),
         },
@@ -481,11 +460,11 @@ class DexgraspReorientEnvCfg(ManagerBasedEnvCfg):
         self.sim.render_interval = self.decimation
         self.sim.physx.bounce_threshold_velocity = 0.2
         self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.gpu_max_rigid_patch_count = 2**23
-        self.sim.physx.gpu_max_rigid_contact_count = 2**23
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**23
-        self.sim.physx.gpu_found_lost_pairs_capacity = 2**23
-        self.sim.physx.gpu_found_lost_pairs_capacity = 2**23
+        self.sim.physx.gpu_max_rigid_patch_count = 2**25
+        self.sim.physx.gpu_max_rigid_contact_count = 2**25
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**25
+        self.sim.physx.gpu_found_lost_pairs_capacity = 2**25
+        self.sim.physx.gpu_found_lost_pairs_capacity = 2**25
 
         if self.curriculum is not None:
             self.curriculum.adr.params["pos_tol"] = self.rewards.success.params["pos_std"] / 2

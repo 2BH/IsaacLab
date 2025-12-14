@@ -45,21 +45,26 @@ XARM7_TILBURG_CFG = ArticulationCfg(
         joint_drive_props=sim_utils.JointDrivePropertiesCfg(drive_type="force"),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        # pos=(-0.10, 0.0, 0.264), 
         pos=(-0.10, 0.0, 0.267), 
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
-            "xarm_joint_(1|3|5|6|7)": 0.0,
-            "xarm_joint_2": -0.5,
-            "xarm_joint_4": 1.2,
+            # "xarm_joint_(1|3|5|6|7)": 0.0,
+            # "xarm_joint_2": -0.8,
+            # "xarm_joint_4": 0.7,
+            "xarm_joint_(1|2)": 0.0,
+            "xarm_joint_3": 0.785398,
+            "xarm_joint_4": 1.570796,
+            "xarm_joint_5": 1.570796,
+            "xarm_joint_6": 1.082104,
+            "xarm_joint_7": -2.684857,
             "(index|middle|ring)_joint_0": 0.0,
             "(index|middle|ring)_joint_1": 0.3,
             "(index|middle|ring)_joint_2": 0.3,
             "(index|middle|ring)_joint_3": 0.3,
-            "thumb_joint_0": 0.6,
-            "thumb_joint_1": 0.0,
-            "thumb_joint_2": 0.3,
-            "thumb_joint_3": 0.3,
+            "thumb_joint_0": 1.5,
+            "thumb_joint_1": -0.60147215,
+            "thumb_joint_2": 0.33795027,
+            "thumb_joint_3": 0.60845138,
         },
     ),
     actuators={
@@ -75,19 +80,27 @@ XARM7_TILBURG_CFG = ArticulationCfg(
                 "xarm_joint_(1|2)": 50.0,
                 "xarm_joint_(3|4|5)": 30.0,
                 "xarm_joint_(6|7)": 20.0,
-                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 3.0,
+                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 0.5,
             },
             stiffness={
-                "xarm_joint_(1|2)": 1500.0,     # From gainprm="1500"
-                "xarm_joint_(3|4|5)": 1000.0,   # From gainprm="1000"
-                "xarm_joint_(6|7)": 800.0,      # From gainprm="800"
-                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 60, # From kp="100"
+                # "xarm_joint_(1|2)": 1500.0,     # From gainprm="1500"
+                # "xarm_joint_(3|4|5)": 1000.0,   # From gainprm="1000"
+                # "xarm_joint_(6|7)": 800.0,      # From gainprm="800"
+                "xarm_joint_(1|2|3|4)": 300.0,     # From gainprm="1500"
+                "xarm_joint_5": 100.0, # Derived from the Kuka Allegro setting
+                "xarm_joint_6": 50.0, 
+                "xarm_joint_7": 25.0,
+                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 3, # Following HORA paper's setting
             },
             damping={
-                "xarm_joint_(1|2)": 150.0,      # Derived from biasprm="... -150"
-                "xarm_joint_(3|4|5)": 100.0,    # Derived from biasprm="... -100"
-                "xarm_joint_(6|7)": 80.0,       # Derived from biasprm="... -80"
-                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 2,   # From joint damping="0.1"
+                # "xarm_joint_(1|2)": 150.0,      # Derived from biasprm="... -150"
+                # "xarm_joint_(3|4|5)": 100.0,    # Derived from biasprm="... -100"
+                # "xarm_joint_(6|7)": 80.0,       # Derived from biasprm="... -80"
+                "xarm_joint_(1|2|3|4)": 45.0,
+                "xarm_joint_5": 20.0,
+                "xarm_joint_6": 15.0,
+                "xarm_joint_7": 15.0,
+                "(thumb|index|middle|ring)_joint_(0|1|2|3)": 0.1,
             },
             friction={
                 "xarm_joint_(1|2|3|4|5|6|7)": 1.0,  # From frictionloss="1"
