@@ -61,3 +61,14 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
     },
 )
+
+gym.register(
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Lift-Play-Mild-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgLiftEnvCfg_PLAY_Mild",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
+    },
+)

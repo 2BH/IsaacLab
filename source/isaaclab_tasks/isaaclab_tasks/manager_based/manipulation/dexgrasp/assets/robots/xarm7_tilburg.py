@@ -24,7 +24,8 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 XARM7_TILBURG_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=os.path.join(CURRENT_DIR, "xarm7_tilburg_digitv2.usd"),
+        # usd_path=os.path.join(CURRENT_DIR, "old_assets", "xarm7_tilburg_digitv2.usd"),
+        usd_path=os.path.join(CURRENT_DIR, "xarm7_tilburg_hand.usd"),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
@@ -43,9 +44,10 @@ XARM7_TILBURG_CFG = ArticulationCfg(
             stabilization_threshold=0.0005,
         ),
         joint_drive_props=sim_utils.JointDrivePropertiesCfg(drive_type="force"),
+        collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.002, rest_offset=0.0)
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(-0.10, 0.0, 0.267), 
+        pos=(-0.10, 0.0, 0.280), 
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
             # "xarm_joint_(1|3|5|6|7)": 0.0,
@@ -58,13 +60,27 @@ XARM7_TILBURG_CFG = ArticulationCfg(
             "xarm_joint_6": 1.082104,
             "xarm_joint_7": -2.684857,
             "(index|middle|ring)_joint_0": 0.0,
-            "(index|middle|ring)_joint_1": 0.3,
-            "(index|middle|ring)_joint_2": 0.3,
-            "(index|middle|ring)_joint_3": 0.3,
+            "(index|middle|ring)_joint_1": 0.6,
+            "(index|middle|ring)_joint_2": 0.6,
+            "(index|middle|ring)_joint_3": 0.6,
             "thumb_joint_0": 1.5,
             "thumb_joint_1": -0.60147215,
             "thumb_joint_2": 0.33795027,
             "thumb_joint_3": 0.60845138,
+            # "xarm_joint_(1|2)": 0.0,
+            # "xarm_joint_3": 0.0,
+            # "xarm_joint_4": 1.3,
+            # "xarm_joint_5": 0.0,
+            # "xarm_joint_6": 0.0,
+            # "xarm_joint_7": 0.0,
+            # "(index|middle|ring)_joint_0": 0.0,
+            # "(index|middle|ring)_joint_1": 0.0,
+            # "(index|middle|ring)_joint_2": 0.0,
+            # "(index|middle|ring)_joint_3": 0.0,
+            # "thumb_joint_0": 0.0,
+            # "thumb_joint_1": 0.0,
+            # "thumb_joint_2": 0.0,
+            # "thumb_joint_3": 0.0,
         },
     ),
     actuators={

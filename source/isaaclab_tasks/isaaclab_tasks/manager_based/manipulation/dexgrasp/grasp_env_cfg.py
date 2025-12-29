@@ -28,7 +28,7 @@ class SceneCfg(InteractiveSceneCfg):
 
     # object
     object: RigidObjectCfg = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/object",
+        prim_path="{ENV_REGEX_NS}/Object",
         spawn=sim_utils.MultiAssetSpawnerCfg(
             assets_cfg=[
                 CuboidCfg(size=(0.05, 0.1, 0.1), physics_material=RigidBodyMaterialCfg(static_friction=0.5)),
@@ -52,8 +52,9 @@ class SceneCfg(InteractiveSceneCfg):
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=0,
                 disable_gravity=False,
+                max_depenetration_velocity=1000.0
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.002, rest_offset=0.0),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.55, 0.1, 0.4)),
@@ -64,14 +65,15 @@ class SceneCfg(InteractiveSceneCfg):
         prim_path="/World/envs/env_.*/table",
         spawn=sim_utils.CuboidCfg(
             size=(0.8, 1.5, 0.04),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.002, rest_offset=0.0),
             # trick: we let visualizer's color to show the table with success coloring
             visible=False,
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.55, 0.0, 0.235), rot=(1.0, 0.0, 0.0, 0.0)),
     )
-
+ 
     # plane
     plane = AssetBaseCfg(
         prim_path="/World/GroundPlane",
@@ -226,8 +228,8 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names="(thumb|index|middle|ring)_joint_.*"),
-            "stiffness_distribution_params": [0.9, 1.1],
-            "damping_distribution_params": [0.9, 1.1],
+            "stiffness_distribution_params": [0.5, 2.0],
+            "damping_distribution_params": [0.5, 2.0],
             "operation": "scale",
         },
     )
@@ -289,14 +291,14 @@ class EventCfg:
         },
     )
 
-    # reset_robot_joints = EventTerm(
-    #     func=mdp.reset_joints_by_offset,
-    #     mode="reset",
-    #     params={
-    #         "position_range": [0, 0.0],
-    #         "velocity_range": [0.0, 0.0],
-    #     },
-    # )
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": [0, 0.0],
+            "velocity_range": [0.0, 0.0],
+        },
+    )
     reset_robot_arm_joints = EventTerm(
         func=mdp.reset_joints_by_offset,
         mode="reset",
@@ -320,7 +322,7 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": [-0.5, 0.5],
+            "position_range": [-0.2, 0.2],
             "velocity_range": [0.0, 0.0],
             "asset_cfg": SceneEntityCfg("robot", joint_names="(thumb|index|middle|ring)_joint_(1|2|3)"),
         },
@@ -464,7 +466,7 @@ class DexgraspReorientEnvCfg(ManagerBasedEnvCfg):
         self.sim.physx.gpu_max_rigid_contact_count = 2**25
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**25
         self.sim.physx.gpu_found_lost_pairs_capacity = 2**25
-        self.sim.physx.gpu_found_lost_pairs_capacity = 2**25
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 2**25
 
         if self.curriculum is not None:
             self.curriculum.adr.params["pos_tol"] = self.rewards.success.params["pos_std"] / 2
@@ -502,3 +504,13 @@ class DexgraspLiftEnvCfg_PLAY(DexgraspLiftEnvCfg):
         self.commands.object_pose.debug_vis = True
         self.commands.object_pose.position_only = True
         self.curriculum.adr.params["init_difficulty"] = self.curriculum.adr.params["max_difficulty"]
+
+class DexgraspLiftEnvCfg_PLAY_Mild(DexgraspLiftEnvCfg):
+    """Dexgrasp lift task evaluation environment definition"""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.commands.object_pose.resampling_time_range = (2.0, 3.0)
+        self.commands.object_pose.debug_vis = True
+        self.commands.object_pose.position_only = True
+        # self.curriculum.adr.params["init_difficulty"] = self.curriculum.adr.params["init_difficulty"]
