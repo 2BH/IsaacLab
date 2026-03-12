@@ -22,10 +22,12 @@ from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 import os
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+_XARM7_TILBURG_USD_PATH = os.path.join(CURRENT_DIR, "xarm7_v3.usd")
+
 XARM7_TILBURG_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         # usd_path=os.path.join(CURRENT_DIR, "old_assets", "xarm7_tilburg_digitv2.usd"),
-        usd_path=os.path.join(CURRENT_DIR, "xarm7_tilburg_hand.usd"),
+        usd_path=_XARM7_TILBURG_USD_PATH,
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
@@ -50,9 +52,6 @@ XARM7_TILBURG_CFG = ArticulationCfg(
         pos=(-0.10, 0.0, 0.280), 
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
-            # "xarm_joint_(1|3|5|6|7)": 0.0,
-            # "xarm_joint_2": -0.8,
-            # "xarm_joint_4": 0.7,
             "xarm_joint_(1|2)": 0.0,
             "xarm_joint_3": 0.785398,
             "xarm_joint_4": 1.570796,
@@ -67,20 +66,6 @@ XARM7_TILBURG_CFG = ArticulationCfg(
             "thumb_joint_1": -0.60147215,
             "thumb_joint_2": 0.33795027,
             "thumb_joint_3": 0.60845138,
-            # "xarm_joint_(1|2)": 0.0,
-            # "xarm_joint_3": 0.0,
-            # "xarm_joint_4": 1.3,
-            # "xarm_joint_5": 0.0,
-            # "xarm_joint_6": 0.0,
-            # "xarm_joint_7": 0.0,
-            # "(index|middle|ring)_joint_0": 0.0,
-            # "(index|middle|ring)_joint_1": 0.0,
-            # "(index|middle|ring)_joint_2": 0.0,
-            # "(index|middle|ring)_joint_3": 0.0,
-            # "thumb_joint_0": 0.0,
-            # "thumb_joint_1": 0.0,
-            # "thumb_joint_2": 0.0,
-            # "thumb_joint_3": 0.0,
         },
     ),
     actuators={
@@ -99,9 +84,6 @@ XARM7_TILBURG_CFG = ArticulationCfg(
                 "(thumb|index|middle|ring)_joint_(0|1|2|3)": 0.5,
             },
             stiffness={
-                # "xarm_joint_(1|2)": 1500.0,     # From gainprm="1500"
-                # "xarm_joint_(3|4|5)": 1000.0,   # From gainprm="1000"
-                # "xarm_joint_(6|7)": 800.0,      # From gainprm="800"
                 "xarm_joint_(1|2|3|4)": 300.0,     # From gainprm="1500"
                 "xarm_joint_5": 100.0, # Derived from the Kuka Allegro setting
                 "xarm_joint_6": 50.0, 
@@ -109,9 +91,6 @@ XARM7_TILBURG_CFG = ArticulationCfg(
                 "(thumb|index|middle|ring)_joint_(0|1|2|3)": 3, # Following HORA paper's setting
             },
             damping={
-                # "xarm_joint_(1|2)": 150.0,      # Derived from biasprm="... -150"
-                # "xarm_joint_(3|4|5)": 100.0,    # Derived from biasprm="... -100"
-                # "xarm_joint_(6|7)": 80.0,       # Derived from biasprm="... -80"
                 "xarm_joint_(1|2|3|4)": 45.0,
                 "xarm_joint_5": 20.0,
                 "xarm_joint_6": 15.0,

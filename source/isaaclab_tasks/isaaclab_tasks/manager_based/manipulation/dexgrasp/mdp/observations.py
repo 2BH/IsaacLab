@@ -161,11 +161,13 @@ class object_point_cloud_b(ManagerTermBase):
         Returns:
             Tensor of shape ``(num_envs, num_points, 3)`` or flattened if requested.
         """
-        ref_pos_w = self.ref_asset.data.root_pos_w.unsqueeze(1).repeat(1, num_points, 1)
-        ref_quat_w = self.ref_asset.data.root_quat_w.unsqueeze(1).repeat(1, num_points, 1)
+        # Use actual sampled point count (not the parameter) to avoid shape mismatches.
+        n_pts = self.points_local.shape[1]
+        ref_pos_w = self.ref_asset.data.root_pos_w.unsqueeze(1).repeat(1, n_pts, 1)
+        ref_quat_w = self.ref_asset.data.root_quat_w.unsqueeze(1).repeat(1, n_pts, 1)
 
-        object_pos_w = self.object.data.root_pos_w.unsqueeze(1).repeat(1, num_points, 1)
-        object_quat_w = self.object.data.root_quat_w.unsqueeze(1).repeat(1, num_points, 1)
+        object_pos_w = self.object.data.root_pos_w.unsqueeze(1).repeat(1, n_pts, 1)
+        object_quat_w = self.object.data.root_quat_w.unsqueeze(1).repeat(1, n_pts, 1)
         # apply rotation + translation
         self.points_w = quat_apply(object_quat_w, self.points_local) + object_pos_w
         if visualize:
@@ -190,7 +192,29 @@ def fingers_contact_force_b(
         Tensor of shape ``(num_envs, 3 * num_sensors)`` with forces stacked horizontally as
         ``[fx, fy, fz]`` per sensor.
     """
-    force_w = [env.scene.sensors[name].data.force_matrix_w.view(env.num_envs, 3) for name in contact_sensor_names]
+    def _filtered_force_w(sensor) -> torch.Tensor:
+        """Return per-env filtered normal force vector in world frame (num_envs, 3).
+
+        Notes:
+            - `ContactSensorData.force_matrix_w` has shape (N, B, M, 3):
+                N: num_envs, B: sensor bodies, M: matched filter bodies (e.g., object links).
+              We aggregate across (B, M) to produce a single per-env vector.
+            - If the sensor isn't configured with filters, `force_matrix_w` is None and we fall back to `net_forces_w`.
+        """
+        if sensor.data.force_matrix_w is not None:
+            fm = sensor.data.force_matrix_w
+            # (N, B, M, 3) -> (N, 3)
+            if fm.ndim == 4:
+                return fm.sum(dim=2).sum(dim=1)
+            # (N, B, 3) -> (N, 3)
+            if fm.ndim == 3:
+                return fm.sum(dim=1)
+            # already (N, 3)
+            return fm
+        # (N, B, 3) -> (N, 3)
+        return sensor.data.net_forces_w.sum(dim=1)
+
+    force_w = [_filtered_force_w(env.scene.sensors[name]) for name in contact_sensor_names]
     force_w = torch.stack(force_w, dim=1)
     robot: Articulation = env.scene[asset_cfg.name]
     forces_b = quat_apply_inverse(robot.data.root_link_quat_w.unsqueeze(1).repeat(1, force_w.shape[1], 1), force_w)

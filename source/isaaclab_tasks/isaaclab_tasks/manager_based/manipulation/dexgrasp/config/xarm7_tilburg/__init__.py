@@ -72,3 +72,82 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
     },
 )
+
+# Train-set object variants (URDF assets from dexgrasp/assets/objects/train_set)
+gym.register(
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Reorient-TrainSet-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgReorientTrainSetEnvCfg",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
+    },
+)
+
+gym.register(
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Reorient-TrainSet-Play-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgReorientTrainSetEnvCfg_PLAY",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
+    },
+)
+
+gym.register(
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Lift-TrainSet-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgLiftTrainSetEnvCfg",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
+    },
+)
+
+gym.register(
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Lift-TrainSet-Play-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgLiftTrainSetEnvCfg_PLAY",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
+    },
+)
+
+gym.register(
+    id="Isaac-Dexgrasp-XArm7-Tilburg-Lift-TrainSet-Play-Mild-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgLiftTrainSetEnvCfg_PLAY_Mild",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DexgraspXArm7TilburgPPORunnerCfg",
+    },
+)
+
+# RobustDexGrasp-aligned teacher-style train-set task.
+gym.register(
+    id="Isaac-RobustDexgrasp-XArm7-Tilburg-TrainSet-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.robust_dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgRobustTrainSetEnvCfg",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:robust_rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.robust_rsl_rl_ppo_cfg:DexgraspXArm7TilburgRobustPPORunnerCfg",
+    },
+)
+
+gym.register(
+    id="Isaac-RobustDexgrasp-XArm7-Tilburg-TrainSet-Play-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.robust_dexgrasp_xarm7_tilburg_env_cfg:DexgraspXArm7TilburgRobustTrainSetEnvCfg_PLAY",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:robust_rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.robust_rsl_rl_ppo_cfg:DexgraspXArm7TilburgRobustPPORunnerCfg",
+    },
+)

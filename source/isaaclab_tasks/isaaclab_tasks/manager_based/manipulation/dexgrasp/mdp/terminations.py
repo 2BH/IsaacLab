@@ -42,8 +42,21 @@ def out_of_bound(
     return outside_bounds
 
 
-def abnormal_robot_state(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
-    """Terminating environment when violation of velocity limits detects, this usually indicates unstable physics caused
-    by very bad, or aggressive action"""
+def abnormal_robot_state(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    arm_joint_names: str = "xarm_joint_(1|2|3|4|5|6|7)",
+) -> torch.Tensor:
+    """Terminate when arm joint velocities exceed 2× their limits.
+
+    Only arm joints are checked.  Hand (finger) joints intentionally excluded:
+    contact impulses during grasping can momentarily push finger velocities past
+    the 2× threshold without indicating any physics instability, which would
+    cause false-positive resets of otherwise valid grasp episodes.
+    """
     robot: Articulation = env.scene[asset_cfg.name]
-    return (robot.data.joint_vel.abs() > (robot.data.joint_vel_limits * 2)).any(dim=1)
+    arm_cfg = SceneEntityCfg(asset_cfg.name, joint_names=[arm_joint_names])
+    arm_cfg.resolve(env.scene)
+    arm_vel = robot.data.joint_vel[:, arm_cfg.joint_ids]
+    arm_limits = robot.data.joint_vel_limits[:, arm_cfg.joint_ids]
+    return (arm_vel.abs() > arm_limits * 2).any(dim=1)

@@ -54,21 +54,30 @@ def contacts(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:
     middle_contact_sensor: ContactSensor = env.scene.sensors["middle_link_3_object_s"]
     ring_contact_sensor: ContactSensor = env.scene.sensors["ring_link_3_object_s"]
 
-    thumb_contact = thumb_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
-    index_contact = index_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
-    middle_contact = middle_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
-    ring_contact = ring_contact_sensor.data.force_matrix_w.view(env.num_envs, 3)
+    def _contact_magnitude(sensor: ContactSensor) -> torch.Tensor:
+        """Return per-env contact magnitude (num_envs,).
 
-    thumb_tip_mag = torch.norm(thumb_contact, dim=-1)
+        Important:
+            When filtering against multi-link objects, `force_matrix_w` may contain multiple normal-force vectors
+            (one per matched filter body). Summing vectors can cancel out, even when contacts are strong.
+            We therefore reduce using the *maximum* magnitude across bodies/filters.
+        """
+        if sensor.data.force_matrix_w is not None:
+            # (N, B, M, 3) -> (N, B, M) -> (N,)
+            return torch.linalg.norm(sensor.data.force_matrix_w, dim=-1).amax(dim=(1, 2))
+        # (N, B, 3) -> (N, B) -> (N,)
+        return torch.linalg.norm(sensor.data.net_forces_w, dim=-1).amax(dim=1)
+
+    thumb_tip_mag = _contact_magnitude(thumb_contact_sensor)
     # thumb_base_mag = torch.norm(thumb_base_contact, dim=-1)
     
-    index_tip_mag = torch.norm(index_contact, dim=-1)
+    index_tip_mag = _contact_magnitude(index_contact_sensor)
     # index_base_mag = torch.norm(index_base_contact, dim=-1)
     
-    middle_tip_mag = torch.norm(middle_contact, dim=-1)
+    middle_tip_mag = _contact_magnitude(middle_contact_sensor)
     # middle_base_mag = torch.norm(middle_base_contact, dim=-1)
     
-    ring_tip_mag = torch.norm(ring_contact, dim=-1)
+    ring_tip_mag = _contact_magnitude(ring_contact_sensor)
     # ring_base_mag = torch.norm(ring_base_contact, dim=-1)
 
     # is_thumb_active = (thumb_tip_mag > threshold) | (thumb_base_mag > threshold)

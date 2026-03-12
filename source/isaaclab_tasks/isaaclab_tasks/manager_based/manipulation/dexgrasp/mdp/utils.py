@@ -11,7 +11,7 @@ import trimesh
 from trimesh.sample import sample_surface
 
 import isaacsim.core.utils.prims as prim_utils
-from pxr import UsdGeom
+from pxr import UsdGeom, UsdPhysics
 
 from isaaclab.sim.utils import get_all_matching_child_prims
 
@@ -53,7 +53,21 @@ def sample_object_point_cloud(num_envs: int, num_points: int, prim_path: str, de
             raise KeyError(f"No valid prims under {obj_path}")
 
         object_prim = prim_utils.get_prim_at_path(obj_path)
-        world_root = xform_cache.GetLocalToWorldTransform(object_prim)
+
+        # Find the actual rigid body prim (what PhysX tracks via root_pos_w / root_quat_w).
+        # RigidObject resolves to the first child with physics:rigidBodyAPI, which may be
+        # a descendant (e.g. Object/bottom) rather than the top-level Xform. Using the wrong
+        # reference frame causes a systematic offset between the observed point cloud and the
+        # actual physics body position.
+        body_prim = object_prim
+        if not object_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            rigid_body_children = get_all_matching_child_prims(
+                obj_path,
+                predicate=lambda p: p.HasAPI(UsdPhysics.RigidBodyAPI),
+            )
+            if rigid_body_children:
+                body_prim = rigid_body_children[0]
+        world_root = xform_cache.GetLocalToWorldTransform(body_prim)
 
         # hash each child prim by its rel transform + geometry
         prim_hashes = []
