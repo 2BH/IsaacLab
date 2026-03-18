@@ -13,6 +13,7 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
@@ -131,13 +132,19 @@ class RobustDexgraspObservationsCfg:
             func=mdp.joint_target_error,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=["xarm_joint_(1|2|3|4|5|6|7)", "(thumb|index|middle|ring)_joint_(0|1|2|3)"])},
         )
-        affordance_contact = ObsTerm(
-            func=mdp.contact_binary_from_sensors,
-            params={"sensor_names": _HAND_OBJECT_SENSOR_NAMES, "threshold": 0.01},
+        # Object fingertip 3D contact forces (4 tips × 3D = 12D)
+        fingertip_object_force = ObsTerm(
+            func=mdp.fingers_contact_force_b,
+            clip=(-20.0, 20.0),
+            params={
+                "contact_sensor_names": _GOOD_CONTACT_TIP_SENSOR_NAMES,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
         )
-        affordance_impulse = ObsTerm(
+        # Hand-table contact force norms (17 bodies × 1D = 17D)
+        hand_table_force = ObsTerm(
             func=mdp.force_norm_from_sensors,
-            params={"sensor_names": _HAND_OBJECT_SENSOR_NAMES},
+            params={"sensor_names": _HAND_TABLE_SENSOR_NAMES},
         )
         joint_height = ObsTerm(
             func=mdp.body_height_to_table,
@@ -184,7 +191,10 @@ class RobustDexgraspObservationsCfg:
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
-            self.history_length = 0
+            # History of 2: concatenate [obs_t, obs_t-1] so the teacher can
+            # infer physical properties (mass, friction, actuator gains) from
+            # temporal response patterns.  Matches DEXTRAH num_obs_history=2.
+            self.history_length = 2
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -221,6 +231,66 @@ class RobustDexgraspEventCfg(train_set.TrainSetEventCfg):
             },
             "velocity_range": {"x": [-0.0, 0.0], "y": [-0.0, 0.0], "z": [-0.0, 0.0]},
             "asset_cfg": SceneEntityCfg("object"),
+        },
+    )
+
+    # -- Physics material randomization (friction) --
+    randomize_object_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("object"),
+            "static_friction_range": (0.5, 1.2),
+            "dynamic_friction_range": (0.3, 1.0),
+            "restitution_range": (0.0, 0.1),
+            "num_buckets": 64,
+        },
+    )
+
+    # -- Object mass randomization (0.5–3.0×) --
+    randomize_object_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("object"),
+            "mass_distribution_params": (0.5, 3.0),
+            "operation": "scale",
+        },
+    )
+
+    # -- Actuator gain randomization (stiffness 0.5–2.0×, damping 0.5–2.0×) --
+    randomize_actuator = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "stiffness_distribution_params": (0.5, 2.0),
+            "damping_distribution_params": (0.5, 2.0),
+            "operation": "scale",
+        },
+    )
+
+    # -- Joint friction randomization (0.0–5.0×) --
+    randomize_joint_params = EventTerm(
+        func=mdp.randomize_joint_parameters,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "friction_distribution_params": (0.0, 5.0),
+            "operation": "scale",
+        },
+    )
+
+    # -- Robot base height randomization (0–5 cm above table) --
+    # Robot base default is at z=0.255 (table top). This adds [0, 0.05] m offset,
+    # simulating mounting height variation on the real setup.
+    randomize_robot_base_height = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {"z": [0.0, 0.05]},
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("robot"),
         },
     )
 
@@ -263,113 +333,51 @@ class RobustDexgraspRewardsCfg:
     #     weight=0.5,
     #     params={"threshold": 1.0},
     # )
-    # Continuous lift reward toward target height with tanh smoothing, gated by soft finger contact.
-    # Includes a hold-duration bonus that rewards sustained grasps over brief tosses.
-    # XY proximity is now a separate additive reward (xy_proximity_reward) to avoid
-    # multiplicative gating that kills lift signal when object is far from hold target.
-    lift_reward = RewTerm(
-        func=mdp.SustainedLiftReward,
-        weight=10.0,
-        params={
-            "table_height": _TABLE_HEIGHT,
-            "target_height": _HOLD_TARGET_HEIGHT,
-            "std": 0.12,
-            "min_hold_height": 0.03,
-            "hold_steps_for_full_bonus": 60.0,
-            "object_cfg": SceneEntityCfg("object"),
-            "good_contact_tip_sensor_names": _GOOD_CONTACT_TIP_SENSOR_NAMES,
-            "good_contact_threshold": 0.5,
-            "contact_temperature": 0.5,
-        },
-    )
-    # Encourage stable hold at a fixed world pose to avoid keeping the object too close to the arm.
-    hold_position_reward = RewTerm(
-        func=mdp.fixed_hold_position_reward,
-        weight=10.0,
+    # Dense 3D proximity reward toward the hold target position.
+    # Merges the old lift_reward, hold_position_reward, and xy_proximity_reward
+    # into a single tanh-distance term gated by fingertip contact.
+    position_tracking = RewTerm(
+        func=mdp.PositionTrackingReward,
+        weight=15.0,
         params={
             "table_height": _TABLE_HEIGHT,
             "target_height": _HOLD_TARGET_HEIGHT,
             "target_x": _HOLD_TARGET_X,
             "target_y": _HOLD_TARGET_Y,
-            "std": 0.12,
-            "min_hold_height": 0.03,
+            "std": 0.2,
             "object_cfg": SceneEntityCfg("object"),
             "good_contact_tip_sensor_names": _GOOD_CONTACT_TIP_SENSOR_NAMES,
             "good_contact_threshold": 0.5,
             "contact_temperature": 0.5,
         },
     )
-    # Standalone XY proximity reward — decoupled from lift to provide independent
-    # horizontal positioning gradient without suppressing the vertical lift signal.
-    xy_proximity_reward = RewTerm(
-        func=mdp.xy_proximity_reward,
-        weight=5.0,
+
+    # Unified hand-table penalty: proximity log-barrier + contact impulse.
+    # Impulse component scaled by curriculum (impulse_scale starts at 0).
+    hand_table_penalty = RewTerm(
+        func=mdp.hand_table_penalty,
+        weight=-0.25,
         params={
-            "target_x": _HOLD_TARGET_X,
-            "target_y": _HOLD_TARGET_Y,
-            "std": 0.15,
-            "min_hold_height": 0.03,
+            "contact_body_cfg": SceneEntityCfg("robot", body_names=_BODY_PART_BODIES),
+            "hand_table_sensor_names": _HAND_TABLE_SENSOR_NAMES,
             "table_height": _TABLE_HEIGHT,
-            "object_cfg": SceneEntityCfg("object"),
-            "good_contact_tip_sensor_names": _GOOD_CONTACT_TIP_SENSOR_NAMES,
-            "good_contact_threshold": 0.5,
-            "contact_temperature": 0.5,
+            "proximity_max_height": 0.03,
+            "impulse_scale": 0.0,
         },
     )
 
-    # Additive bonus for engaging more fingertips — discourages degenerate 2-finger grips.
-    r_finger_diversity = RewTerm(
-        func=mdp.finger_diversity_reward,
-        weight=3.0,
+    # Unified arm collision penalty: proximity log-barrier + collision force (incl. self-collision).
+    # Uses unfiltered _all_s sensors to catch arm-arm and arm-hand contacts.
+    # Impulse component scaled by curriculum (impulse_scale starts at 0).
+    arm_collision_penalty = RewTerm(
+        func=mdp.arm_collision_penalty,
+        weight=-0.1,
         params={
-            "good_contact_tip_sensor_names": _GOOD_CONTACT_TIP_SENSOR_NAMES,
-            "good_contact_threshold": 0.5,
-            "temperature": 0.5,
+            "arm_body_cfg": SceneEntityCfg("robot", body_names=_ARM_COLLISION_BODIES),
+            "arm_collision_sensor_names": _ARM_COLLISION_SENSOR_NAMES,
+            "table_height": _TABLE_HEIGHT,
+            "impulse_scale": 0.0,
         },
-    )
-
-    # Penalize hand links approaching the table (log barrier near table height).
-    hand_table_reward = RewTerm(
-        func=mdp.table_log_penalty,
-        weight=-0.15,
-        params={"contact_body_cfg": SceneEntityCfg("robot", body_names=_BODY_PART_BODIES), "table_height": _TABLE_HEIGHT},
-    )
-    # Penalize hand links touching the table.
-    hand_table_contact_reward = RewTerm(
-        func=mdp.table_contact_reward,
-        weight=-0.15,
-        params={"hand_table_sensor_names": _HAND_TABLE_SENSOR_NAMES, "threshold": 0.01},
-    )
-    # Penalize hand-table contact impulse magnitude.
-    hand_table_impulse_reward = RewTerm(
-        func=mdp.table_impulse_reward,
-        weight=-0.15,
-        params={"hand_table_sensor_names": _HAND_TABLE_SENSOR_NAMES},
-    )
-
-    # Penalize arm links getting too close to the table.
-    arm_height_reward = RewTerm(
-        func=mdp.arm_height_log_penalty,
-        weight=-0.05,
-        params={"arm_body_cfg": SceneEntityCfg("robot", body_names=_ARM_COLLISION_BODIES), "table_height": _TABLE_HEIGHT},
-    )
-    # Penalize arm contacts with object/table (undesired arm interaction).
-    arm_contact_reward = RewTerm(
-        func=mdp.arm_contact_reward,
-        weight=-0.1,
-        params={"arm_sensor_names": _ARM_INTERACTION_SENSOR_NAMES, "threshold": 0.01},
-    )
-    # Penalize arm contact impulse magnitude (often the strongest instability term).
-    arm_impulse_reward = RewTerm(
-        func=mdp.arm_impulse_reward,
-        weight=-0.1,
-        params={"arm_sensor_names": _ARM_INTERACTION_SENSOR_NAMES},
-    )
-    # Penalize arm collision count from dedicated collision sensors.
-    arm_collision_reward = RewTerm(
-        func=mdp.arm_collision_count,
-        weight=-0.1,
-        params={"arm_contact_sensor_names": _ARM_COLLISION_SENSOR_NAMES, "threshold": 0.01},
     )
 
     # Penalize downward pressing of the object into the table (Z-axis only).
@@ -384,23 +392,29 @@ class RobustDexgraspRewardsCfg:
         },
     )
 
-    # Penalize wrist linear velocity — prevents high-speed smashing approaches.
-    wrist_vel_reward = RewTerm(
-        func=mdp.wrist_vel_reward,
-        weight=-0.01,
-        params={"wrist_body_cfg": SceneEntityCfg("robot", body_names=["palm_link"])},
-    )
-    # Penalize wrist angular velocity.
-    wrist_qvel_reward = RewTerm(
-        func=mdp.wrist_qvel_reward,
-        weight=-0.005,
-        params={"wrist_body_cfg": SceneEntityCfg("robot", body_names=["palm_link"])},
-    )
-    # Penalize high arm joint speed (includes extra scaling for large |qdot| in term implementation).
-    arm_joint_vel_reward = RewTerm(
-        func=mdp.arm_joint_vel_reward,
-        weight=-0.02,
-        params={"arm_joint_cfg": SceneEntityCfg("robot", joint_names="xarm_joint_(1|2|3|4|5|6|7)")},
+    # Action smoothness penalties (same as original dexgrasp structure).
+    action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.0005)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.0005)
+
+    # Dense tanh-squared success reward (DexGrasp convention).
+    # Sharp reward near the 3-D hold target; complements the broader
+    # position_tracking (std=0.12).  Latches per-env ``success`` flag
+    # after required_hold_steps consecutive steps within success_radius.
+    # Table turns green on success.
+    grasp_success = RewTerm(
+        func=mdp.GraspSuccessReward,
+        weight=10.0,
+        params={
+            "table_height": _TABLE_HEIGHT,
+            "target_height": _HOLD_TARGET_HEIGHT,
+            "target_x": _HOLD_TARGET_X,
+            "target_y": _HOLD_TARGET_Y,
+            "std": 0.1,
+            "success_radius": 0.05,
+            "required_hold_steps": 30,
+            "object_cfg": SceneEntityCfg("object"),
+            "table_asset_name": "table",
+        },
     )
 
     # One-shot penalty on configured terminal events.
@@ -450,9 +464,59 @@ class RobustDexgraspTrainSetSceneCfg(train_set.TrainSetSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.25, 0.15, 0.15), roughness=0.25),
-            visible=True,
+            # Hidden at spawn; GraspSuccessReward overlays colored markers (red/green)
+            visible=False,
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.45, 0.0, 0.235), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+
+@configclass
+class RobustDexgraspCurriculumCfg:
+    """Success-driven ADR curriculum for lift-grasp tasks.
+
+    The ``LiftDifficultyScheduler`` tracks per-env grasp success and exposes
+    ``difficulty_frac`` (0→1).  ``modify_term_cfg`` uses it to ramp penalty
+    weights and DR ranges as the policy improves.
+    """
+
+    # Core scheduler: promotes on grasp success, demotes on failure.
+    lift_adr = CurrTerm(
+        func=mdp.LiftDifficultyScheduler,
+        params={
+            "success_term_name": "grasp_success",
+            "init_difficulty": 0,
+            "min_difficulty": 0,
+            "max_difficulty": 10,
+        },
+    )
+
+    # Ramp hand-table impulse scale: 0 at difficulty 0 → 1.0 at difficulty 10.
+    hand_table_impulse_adr = CurrTerm(
+        func=mdp.modify_term_cfg,
+        params={
+            "address": "rewards.hand_table_penalty.params.impulse_scale",
+            "modify_fn": mdp.initial_final_interpolate_fn,
+            "modify_params": {
+                "initial_value": 0.0,
+                "final_value": 1.0,
+                "difficulty_term_str": "lift_adr",
+            },
+        },
+    )
+
+    # Ramp arm collision impulse scale similarly.
+    arm_impulse_adr = CurrTerm(
+        func=mdp.modify_term_cfg,
+        params={
+            "address": "rewards.arm_collision_penalty.params.impulse_scale",
+            "modify_fn": mdp.initial_final_interpolate_fn,
+            "modify_params": {
+                "initial_value": 0.0,
+                "final_value": 1.0,
+                "difficulty_term_str": "lift_adr",
+            },
+        },
     )
 
 
@@ -469,9 +533,9 @@ class DexgraspXArm7TilburgRobustTrainSetEnvCfg(ManagerBasedRLEnvCfg):
     terminations: RobustDexgraspTerminationsCfg = RobustDexgraspTerminationsCfg()
     events: RobustDexgraspEventCfg = RobustDexgraspEventCfg()
     commands: object | None = None
-    curriculum: object | None = None
+    curriculum: RobustDexgraspCurriculumCfg = RobustDexgraspCurriculumCfg()
 
-    episode_length_s: float = 14.0
+    episode_length_s: float = 6.0
     is_finite_horizon: bool = True
 
     def __post_init__(self):

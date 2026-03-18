@@ -14,6 +14,8 @@ from isaaclab.envs import mdp
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, compute_pose_error
 
+from .robust_terms import GraspSuccessReward
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -109,5 +111,77 @@ class DifficultyScheduler(ManagerTermBase):
             self.current_adr_difficulties[env_ids] + 1,
             demot,
         ).clamp(min=min_difficulty, max=max_difficulty)
+        self.difficulty_frac = torch.mean(self.current_adr_difficulties) / max(max_difficulty, 1)
+        return self.difficulty_frac
+
+
+class LiftDifficultyScheduler(ManagerTermBase):
+    """Success-driven difficulty scheduler for lift-grasp tasks.
+
+    Uses the ``GraspSuccessReward`` term's per-env ``success`` flag as the
+    promotion criterion.  At episode end (when ``env_ids`` are reset):
+
+    * **success** → difficulty += 1
+    * **failure** → difficulty -= 1 (unless ``promotion_only=True``)
+
+    The normalised mean difficulty is exposed as ``difficulty_frac`` ∈ [0, 1]
+    for use with ``initial_final_interpolate_fn`` to ramp any parameter
+    (e.g. impulse penalty weight, DR ranges).
+    """
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        init_difficulty = self.cfg.params.get("init_difficulty", 0)
+        self.current_adr_difficulties = torch.ones(env.num_envs, device=env.device) * init_difficulty
+        self.difficulty_frac = 0.0
+
+    def get_state(self):
+        return self.current_adr_difficulties
+
+    def set_state(self, state: torch.Tensor):
+        self.current_adr_difficulties = state.clone().to(self._env.device)
+
+    def _find_success_term(self, env: ManagerBasedRLEnv, name: str) -> GraspSuccessReward | None:
+        """Find the GraspSuccessReward term in the reward manager."""
+        rm = env.reward_manager
+        # Search by name first
+        if name in rm._term_names:
+            idx = rm._term_names.index(name)
+            func = rm._term_cfgs[idx].func
+            if isinstance(func, GraspSuccessReward):
+                return func
+        # Fallback: search by type
+        for cfg in rm._class_term_cfgs:
+            if isinstance(cfg.func, GraspSuccessReward):
+                return cfg.func
+        return None
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        env_ids: Sequence[int],
+        success_term_name: str = "grasp_success",
+        init_difficulty: int = 0,
+        min_difficulty: int = 0,
+        max_difficulty: int = 10,
+        promotion_only: bool = False,
+    ):
+        success_term = self._find_success_term(env, success_term_name)
+        if success_term is None:
+            return self.difficulty_frac
+
+        succeeded = success_term.success[env_ids]
+
+        if promotion_only:
+            demot = self.current_adr_difficulties[env_ids]
+        else:
+            demot = self.current_adr_difficulties[env_ids] - 1
+
+        self.current_adr_difficulties[env_ids] = torch.where(
+            succeeded,
+            self.current_adr_difficulties[env_ids] + 1,
+            demot,
+        ).clamp(min=min_difficulty, max=max_difficulty)
+
         self.difficulty_frac = torch.mean(self.current_adr_difficulties) / max(max_difficulty, 1)
         return self.difficulty_frac

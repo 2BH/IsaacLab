@@ -88,6 +88,9 @@ from datetime import datetime
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 from rsl_rl.utils import store_code_state
 
+# Vision-based distillation (depth camera student-teacher)
+from isaaclab_tasks.manager_based.manipulation.dexgrasp.mdp.vision_distillation import VisionDistillationRunner
+
 from isaaclab.envs import (
     DirectMARLEnv,
     DirectMARLEnvCfg,
@@ -426,8 +429,28 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     _print_joint_limits_from_obs(env)
 
     # save resume path before creating a new log_dir
-    if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+    if agent_cfg.resume or "Distillation" in agent_cfg.algorithm.class_name:
+        load_run = agent_cfg.load_run
+        # If load_run contains '/' it is a path, not a run-dir name within the current experiment.
+        # Resolve it as a direct path (absolute or relative to cwd) so that cross-experiment
+        # checkpoint loading works (e.g. loading a teacher checkpoint for distillation).
+        if load_run and "/" in load_run:
+            candidate = os.path.abspath(load_run)
+            if os.path.isfile(candidate):
+                # load_run is a direct path to a checkpoint file
+                resume_path = candidate
+            elif os.path.isdir(candidate):
+                # load_run is a directory — find the latest checkpoint inside it
+                resume_path = get_checkpoint_path(
+                    os.path.dirname(candidate), os.path.basename(candidate), agent_cfg.load_checkpoint
+                )
+            else:
+                # Fall back: treat the parent as log_root and basename as run_dir regex
+                parent = os.path.dirname(candidate)
+                base = os.path.basename(candidate)
+                resume_path = get_checkpoint_path(parent, base, agent_cfg.load_checkpoint)
+        else:
+            resume_path = get_checkpoint_path(log_root_path, load_run, agent_cfg.load_checkpoint)
 
     # wrap for video recording
     if args_cli.video:
@@ -447,6 +470,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # create runner from rsl-rl
     if agent_cfg.class_name == "OnPolicyRunner":
         runner = DebugOnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+    elif agent_cfg.class_name == "VisionDistillationRunner":
+        runner = VisionDistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     elif agent_cfg.class_name == "DistillationRunner":
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     else:
@@ -454,7 +479,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # write git state to logs
     runner.add_git_repo_to_log(__file__)
     # load the checkpoint
-    if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
+    if agent_cfg.resume or "Distillation" in agent_cfg.algorithm.class_name:
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         # load previously trained model
         runner.load(resume_path)

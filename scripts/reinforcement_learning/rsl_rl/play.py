@@ -34,14 +34,23 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument(
+    "--save_depth_interval",
+    type=int,
+    default=0,
+    help="Save depth camera images every N steps (0 = disabled). Images saved to <log_dir>/depth_vis/.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli, hydra_args = parser.parse_known_args()
-# always enable cameras to record video
-if args_cli.video:
+# always enable cameras to record video or when depth visualization is requested
+if args_cli.video or args_cli.save_depth_interval > 0:
+    args_cli.enable_cameras = True
+# auto-enable cameras for distillation tasks that use depth sensors
+if args_cli.task and "Distill" in args_cli.task:
     args_cli.enable_cameras = True
 
 # clear out sys.argv for Hydra
@@ -59,6 +68,8 @@ import time
 import torch
 
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
+
+from isaaclab_tasks.manager_based.manipulation.dexgrasp.mdp.vision_distillation import VisionDistillationRunner
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -108,7 +119,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     elif args_cli.checkpoint:
         resume_path = retrieve_file_path(args_cli.checkpoint)
     else:
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+        load_run = agent_cfg.load_run
+        if load_run and "/" in load_run:
+            candidate = os.path.abspath(load_run)
+            if os.path.isfile(candidate):
+                resume_path = candidate
+            elif os.path.isdir(candidate):
+                resume_path = get_checkpoint_path(
+                    os.path.dirname(candidate), os.path.basename(candidate), agent_cfg.load_checkpoint
+                )
+            else:
+                parent = os.path.dirname(candidate)
+                base = os.path.basename(candidate)
+                resume_path = get_checkpoint_path(parent, base, agent_cfg.load_checkpoint)
+        else:
+            resume_path = get_checkpoint_path(log_root_path, load_run, agent_cfg.load_checkpoint)
 
     log_dir = os.path.dirname(resume_path)
 
@@ -141,6 +166,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # load previously trained model
     if agent_cfg.class_name == "OnPolicyRunner":
         runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+    elif agent_cfg.class_name == "VisionDistillationRunner":
+        runner = VisionDistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
     elif agent_cfg.class_name == "DistillationRunner":
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
     else:
@@ -167,12 +194,35 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     else:
         normalizer = None
 
-    # export policy to onnx/jit
-    export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    # export policy to onnx/jit (skip for custom distillation modules that don't support tracing)
+    try:
+        export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+        export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    except Exception as e:
+        print(f"[WARN] Could not export policy: {e}")
 
     dt = env.unwrapped.step_dt
+
+    # Set up depth visualization if requested and depth camera exists
+    depth_vis_dir = None
+    depth_sensor = None
+    if args_cli.save_depth_interval > 0:
+        import numpy as np
+        from PIL import Image
+
+        # Try to find the depth camera sensor in the scene
+        if hasattr(env.unwrapped, "scene") and hasattr(env.unwrapped.scene, "sensors"):
+            for name, sensor in env.unwrapped.scene.sensors.items():
+                if "depth" in name.lower() or "camera" in name.lower():
+                    depth_sensor = sensor
+                    break
+        if depth_sensor is not None:
+            depth_vis_dir = os.path.join(log_dir, "depth_vis")
+            os.makedirs(depth_vis_dir, exist_ok=True)
+            print(f"[INFO] Saving depth images every {args_cli.save_depth_interval} steps to: {depth_vis_dir}")
+        else:
+            print("[WARN] --save_depth_interval set but no depth camera found in scene.")
 
     # reset environment
     obs = env.get_observations()
@@ -188,8 +238,29 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             obs, _, dones, _ = env.step(actions)
             # reset recurrent states for episodes that have terminated
             policy_nn.reset(dones)
+
+        # Save depth camera visualization
+        if depth_vis_dir is not None and timestep % args_cli.save_depth_interval == 0:
+            depth_data = depth_sensor.data.output["distance_to_camera"]  # (N, H, W, 1) or (N, H, W)
+            # Take env 0 for visualization
+            depth_img = depth_data[0].cpu().numpy()
+            if depth_img.ndim == 3 and depth_img.shape[-1] == 1:
+                depth_img = depth_img[..., 0]
+            # Normalize to 0-255 for visualization (clip infinities)
+            valid = np.isfinite(depth_img)
+            if valid.any():
+                d_min, d_max = depth_img[valid].min(), depth_img[valid].max()
+                depth_norm = np.clip((depth_img - d_min) / max(d_max - d_min, 1e-6), 0, 1)
+                depth_norm = (depth_norm * 255).astype(np.uint8)
+                depth_norm[~valid] = 0
+            else:
+                depth_norm = np.zeros_like(depth_img, dtype=np.uint8)
+            Image.fromarray(depth_norm, mode="L").save(
+                os.path.join(depth_vis_dir, f"depth_{timestep:06d}.png")
+            )
+
+        timestep += 1
         if args_cli.video:
-            timestep += 1
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length:
                 break

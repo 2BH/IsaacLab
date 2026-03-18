@@ -151,3 +151,24 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.robust_rsl_rl_ppo_cfg:DexgraspXArm7TilburgRobustPPORunnerCfg",
     },
 )
+
+# Distillation: teacher (privileged) → student (proprio + depth camera)
+gym.register(
+    id="Isaac-RobustDexgrasp-XArm7-Tilburg-Distill-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.robust_dexgrasp_distill_env_cfg:DexgraspXArm7TilburgDistillEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.robust_rsl_rl_distillation_cfg:DexgraspXArm7TilburgDistillationRunnerCfg",
+    },
+)
+
+gym.register(
+    id="Isaac-RobustDexgrasp-XArm7-Tilburg-Distill-Play-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.robust_dexgrasp_distill_env_cfg:DexgraspXArm7TilburgDistillEnvCfg_PLAY",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.robust_rsl_rl_distillation_cfg:DexgraspXArm7TilburgDistillationRunnerCfg",
+    },
+)

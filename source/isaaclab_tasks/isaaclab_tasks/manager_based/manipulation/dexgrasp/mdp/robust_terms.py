@@ -9,8 +9,10 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_inv, quat_mul
@@ -538,29 +540,16 @@ def fixed_hold_position_reward(
     return reward
 
 
-class SustainedLiftReward(ManagerTermBase):
-    """Reward that combines instantaneous lift height with a hold-duration bonus.
+class PositionTrackingReward(ManagerTermBase):
+    """Dense 3D proximity reward toward a fixed hold target.
 
-    The reward has two components:
+    Replaces the separate lift, hold-position, and XY-proximity rewards with a
+    single term.  Reward ∈ [0, 1] based on tanh distance to the 3D target
+    ``(target_x, target_y, table_height + target_height)``, gated by soft
+    fingertip contact so the agent cannot score by tossing.
 
-    1. **Height component** – tanh-shaped reward in [0, 1] based on how close the
-       object is to ``target_height`` above the table.  Gated by good-contact so
-       the agent cannot score by tossing the object.
-    2. **Hold bonus** – tracks how many consecutive steps the object has been
-       above ``min_hold_height`` while maintaining good fingertip contact.  The
-       bonus is ``tanh(consecutive_steps / hold_steps_for_full_bonus)``, so it
-       ramps smoothly from 0 to ~1.  This explicitly rewards *sustained* grasps
-       and cannot be exploited by briefly flicking the object upward.
-
-    Optionally, both components are multiplied by an XY-proximity factor toward a
-    fixed hold target (``hold_target_x``, ``hold_target_y``).  This prevents the
-    agent from maximising height reward by retracting the arm toward the robot base
-    instead of holding the object at the intended workspace position.
-
-    The two components are summed, giving a total range of roughly [0, 2].
-    Scale the weight in the reward config accordingly (e.g. if you used weight 5.0
-    for the old instantaneous-only reward, use ~3.0 here to keep the peak similar
-    while giving substantial credit to stability).
+    The 3D distance is computed in the env-local frame so targets are
+    consistent across parallel environments.
     """
 
     def __init__(self, cfg, env: ManagerBasedRLEnv):
@@ -569,62 +558,166 @@ class SustainedLiftReward(ManagerTermBase):
         self.object_body_cfg: SceneEntityCfg | None = cfg.params.get("object_body_cfg", None)
         self.table_height: float = cfg.params["table_height"]
         self.target_height: float = cfg.params.get("target_height", 0.20)
-        self.std: float = cfg.params.get("std", 0.03)
-        self.min_hold_height: float = cfg.params.get("min_hold_height", 0.03)
-        self.hold_steps_for_full_bonus: float = cfg.params.get("hold_steps_for_full_bonus", 60.0)
-        self.good_contact_tip_sensor_names: list[str] | None = cfg.params.get("good_contact_tip_sensor_names", None)
+        self.target_x: float = cfg.params.get("target_x", -0.40)
+        self.target_y: float = cfg.params.get("target_y", 0.0)
+        self.std: float = cfg.params.get("std", 0.10)
+        self.good_contact_tip_sensor_names: list[str] | None = cfg.params.get(
+            "good_contact_tip_sensor_names", None
+        )
         self.good_contact_threshold: float = cfg.params.get("good_contact_threshold", 1.0)
         self.contact_temperature: float = cfg.params.get("contact_temperature", 0.5)
-        # Optional XY hold-target gate: if set, lift reward is multiplied by proximity in XY.
-        self.hold_target_x: float | None = cfg.params.get("hold_target_x", None)
-        self.hold_target_y: float | None = cfg.params.get("hold_target_y", None)
-        self.xy_std: float = cfg.params.get("xy_std", 0.15)
-        # Internal counter: how many consecutive steps each env has been holding.
-        self._hold_steps = torch.zeros(env.num_envs, device=env.device)
-
-    def reset(self, env_ids: Sequence[int] | slice | None = None):
-        ids = _resolve_env_ids(self._env, env_ids)
-        self._hold_steps[ids] = 0.0
 
     def __call__(
         self,
         env: ManagerBasedRLEnv,
         table_height: float = 0.255,
         target_height: float = 0.20,
-        std: float = 0.03,
-        min_hold_height: float = 0.03,
-        hold_steps_for_full_bonus: float = 60.0,
+        target_x: float = -0.40,
+        target_y: float = 0.0,
+        std: float = 0.10,
         object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
         object_body_cfg: SceneEntityCfg | None = None,
         good_contact_tip_sensor_names: list[str] | None = None,
         good_contact_threshold: float = 1.0,
         contact_temperature: float = 0.5,
-        hold_target_x: float | None = None,
-        hold_target_y: float | None = None,
-        xy_std: float = 0.15,
     ) -> torch.Tensor:
         obj_pos_w, _ = _rigid_pose_w(env, self.object_cfg, self.object_body_cfg)
-        height_over_table = obj_pos_w[:, 2] - self.table_height
 
-        # --- soft contact gate (smooth sigmoid instead of hard binary) ---
+        # 3D target in world frame (per-env)
+        target_local = obj_pos_w.new_tensor(
+            (self.target_x, self.target_y, self.table_height + self.target_height)
+        ).unsqueeze(0)
+        target_w = env.scene.env_origins + target_local
+
+        # 3D distance
+        dist = torch.norm(obj_pos_w - target_w, dim=1)
+        reward = 1.0 - torch.tanh(dist / max(self.std, 1e-6))
+
+        # Gate by fingertip contact
         if self.good_contact_tip_sensor_names:
             contact_ok = _soft_contact_gate(
                 env, self.good_contact_tip_sensor_names, self.good_contact_threshold,
                 temperature=self.contact_temperature,
             )
-        else:
-            contact_ok = torch.ones(env.num_envs, device=env.device)
+            reward = reward * contact_ok
 
-        # --- 1) instantaneous height reward (tanh, gated) ---
-        height_error = torch.clamp(self.target_height - height_over_table, min=0.0)
-        height_reward = (1.0 - torch.tanh(height_error / max(self.std, 1e-6))) * contact_ok
+        return reward
 
-        # --- 2) sustained hold bonus ---
-        holding = (height_over_table > self.min_hold_height).float() * contact_ok
-        self._hold_steps = (self._hold_steps + 1.0) * holding  # reset to 0 on any drop
-        hold_bonus = torch.tanh(self._hold_steps / max(self.hold_steps_for_full_bonus, 1.0))
 
-        return height_reward + hold_bonus
+class GraspSuccessReward(ManagerTermBase):
+    """Dense tanh-squared success reward for holding an object near the 3-D target.
+
+    Following the DexGrasp convention, the reward is::
+
+        (1 - tanh(dist / std)) ** 2
+
+    where ``dist`` is the 3-D distance to the hold target
+    ``(target_x, target_y, table_height + target_height)``.  The squared
+    tanh concentrates reward sharply near the target (complementing the
+    broader ``PositionTrackingReward``).
+
+    A per-env ``success`` flag latches True after ``required_hold_steps``
+    consecutive steps within ``success_radius``.  The flag is read by
+    ``LiftDifficultyScheduler`` for ADR and cannot be re-gained after
+    release.
+
+    When ``table_asset_name`` is provided, the real table is hidden and
+    overlaid with colored visualization markers (red = not yet succeeded,
+    green = success latched) following the DexGrasp convention.
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self.object_cfg: SceneEntityCfg = cfg.params.get("object_cfg", SceneEntityCfg("object"))
+        self.object_body_cfg: SceneEntityCfg | None = cfg.params.get("object_body_cfg", None)
+        self.table_height: float = cfg.params["table_height"]
+        self.target_height: float = cfg.params.get("target_height", 0.25)
+        self.target_x: float = cfg.params.get("target_x", -0.75)
+        self.target_y: float = cfg.params.get("target_y", 0.0)
+        self.std: float = cfg.params.get("std", 0.1)
+        self.success_radius: float = cfg.params.get("success_radius", 0.05)
+        self.required_hold_steps: int = cfg.params.get("required_hold_steps", 30)
+
+        # Per-env state
+        self._hold_counter = torch.zeros(env.num_envs, device=env.device)
+        self.success = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+        # Table color visualizer (optional)
+        table_asset_name: str | None = cfg.params.get("table_asset_name", None)
+        self._success_viz = None
+        self._table_asset = None
+        if table_asset_name is not None:
+            table_asset: RigidObject = env.scene[table_asset_name]
+            self._table_asset = table_asset
+            # Get table spawn config from scene config
+            table_spawn = getattr(env.scene.cfg, table_asset_name).spawn
+            viz_cfg = VisualizationMarkersCfg(
+                prim_path="/Visuals/SuccessTableMarkers",
+                markers={
+                    "failure": table_spawn.replace(
+                        visual_material=sim_utils.PreviewSurfaceCfg(
+                            diffuse_color=(0.25, 0.15, 0.15), roughness=0.25,
+                        ),
+                        visible=True,
+                    ),
+                    "success": table_spawn.replace(
+                        visual_material=sim_utils.PreviewSurfaceCfg(
+                            diffuse_color=(0.15, 0.25, 0.15), roughness=0.25,
+                        ),
+                        visible=True,
+                    ),
+                },
+            )
+            self._success_viz = VisualizationMarkers(viz_cfg)
+            self._success_viz.set_visibility(True)
+
+    def reset(self, env_ids: Sequence[int] | slice | None = None):
+        ids = _resolve_env_ids(self._env, env_ids)
+        self._hold_counter[ids] = 0.0
+        self.success[ids] = False
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        table_height: float = 0.255,
+        target_height: float = 0.25,
+        target_x: float = -0.75,
+        target_y: float = 0.0,
+        std: float = 0.1,
+        success_radius: float = 0.05,
+        required_hold_steps: int = 30,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+        object_body_cfg: SceneEntityCfg | None = None,
+        table_asset_name: str | None = None,
+    ) -> torch.Tensor:
+        obj_pos_w, _ = _rigid_pose_w(env, self.object_cfg, self.object_body_cfg)
+
+        # 3D target in world frame (per-env)
+        target_local = obj_pos_w.new_tensor(
+            (self.target_x, self.target_y, self.table_height + self.target_height)
+        ).unsqueeze(0)
+        target_w = env.scene.env_origins + target_local
+
+        # 3D distance
+        dist = torch.norm(obj_pos_w - target_w, dim=1)
+
+        # Dense tanh-squared reward (DexGrasp convention)
+        reward = (1.0 - torch.tanh(dist / max(self.std, 1e-6))) ** 2
+
+        # Success flag: latch after required_hold_steps within success_radius
+        at_goal = dist < self.success_radius
+        self._hold_counter = (self._hold_counter + 1.0) * at_goal.float()
+        newly_succeeded = (~self.success) & (self._hold_counter >= self.required_hold_steps)
+        self.success = self.success | newly_succeeded
+
+        # Update table color visualization
+        if self._success_viz is not None and self._table_asset is not None:
+            self._success_viz.visualize(
+                self._table_asset.data.root_pos_w,
+                marker_indices=self.success.int(),
+            )
+
+        return reward
 
 
 def table_contact_reward(
@@ -708,6 +801,70 @@ def arm_impulse_reward(
     arm_sensor_names: list[str],
 ) -> torch.Tensor:
     return _forces_from_sensors(env, arm_sensor_names).norm(dim=-1).norm(dim=1)
+
+
+def hand_table_penalty(
+    env: ManagerBasedRLEnv,
+    contact_body_cfg: SceneEntityCfg,
+    hand_table_sensor_names: list[str],
+    table_height: float,
+    proximity_max_height: float = 0.03,
+    impulse_clip_max: float = 20.0,
+    impulse_scale: float = 1.0,
+) -> torch.Tensor:
+    """Unified hand-table penalty: proximity + contact force.
+
+    Combines the old ``table_log_penalty``, ``table_contact_reward``, and
+    ``table_impulse_reward`` into a single term.
+
+    * **Proximity**: log-barrier when hand links are within ``proximity_max_height``
+      of the table surface (approach deterrent).
+    * **Impulse**: contact force magnitude, scaled by ``impulse_scale``
+      (can be ramped by curriculum for gentleness shaping).
+    """
+    # Proximity component (log barrier)
+    heights = body_height_to_table(env, contact_body_cfg, table_height)
+    clipped_h = torch.clamp(heights, min=0.002, max=proximity_max_height)
+    in_range = heights < proximity_max_height
+    log_pen = -torch.log(clipped_h / proximity_max_height) * in_range.float()
+    proximity = log_pen.sum(dim=1)
+
+    # Impulse component
+    norms = _forces_from_sensors(env, hand_table_sensor_names, filtered_only=True).norm(dim=-1)
+    impulse = norms.clamp(min=0.0, max=impulse_clip_max).sum(dim=1) * impulse_scale
+
+    return proximity + impulse
+
+
+def arm_collision_penalty(
+    env: ManagerBasedRLEnv,
+    arm_body_cfg: SceneEntityCfg,
+    arm_collision_sensor_names: list[str],
+    table_height: float,
+    impulse_scale: float = 1.0,
+) -> torch.Tensor:
+    """Unified arm collision penalty: proximity + contact force (incl. self-collision).
+
+    Combines the old ``arm_height_log_penalty``, ``arm_contact_reward``,
+    ``arm_impulse_reward``, and ``arm_collision_count`` into a single term.
+
+    Uses unfiltered sensors (``_all_s``) to catch self-collisions
+    (arm-to-arm, arm-to-hand) in addition to arm-table and arm-object.
+
+    * **Proximity**: log-barrier for arm links near the table.
+    * **Collision force**: total contact force norm from all contacts,
+      scaled by ``impulse_scale`` (can be ramped by curriculum).
+    """
+    # Proximity component (log barrier near table)
+    heights = body_height_to_table(env, arm_body_cfg, table_height)
+    clipped_h = torch.clamp(heights, min=0.002, max=0.02)
+    proximity = -torch.log(50.0 * clipped_h).sum(dim=1)
+
+    # Collision force (unfiltered — includes self-collision)
+    forces = _forces_from_sensors(env, arm_collision_sensor_names)
+    impulse = forces.norm(dim=-1).sum(dim=1) * impulse_scale
+
+    return proximity + impulse
 
 
 def wrist_vel_reward(

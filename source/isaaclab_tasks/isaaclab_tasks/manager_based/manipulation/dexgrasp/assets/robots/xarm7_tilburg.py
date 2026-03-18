@@ -49,7 +49,7 @@ XARM7_TILBURG_CFG = ArticulationCfg(
         collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.002, rest_offset=0.0)
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(-0.10, 0.0, 0.280), 
+        pos=(-0.10, 0.0, 0.255),  # flush with table top (z=0.255)
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
             "xarm_joint_(1|2)": 0.0,
